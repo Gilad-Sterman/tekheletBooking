@@ -1,5 +1,4 @@
 const Tour = require('../models/tour.model');
-const TourType = require('../models/tourType.model');
 const User = require('../models/user.model');
 const calendarService = require('../services/calendar.service');
 
@@ -36,7 +35,7 @@ exports.getTours = async (req, res) => {
         }
 
         const tours = await Tour.find(query)
-            .populate('tourType')
+            .populate('primaryGuide', 'name email role')
             .populate('assignedGuides', 'name email role');
         res.json(tours);
     } catch (err) {
@@ -45,16 +44,6 @@ exports.getTours = async (req, res) => {
     }
 };
 
-// Get all tour types
-exports.getTourTypes = async (req, res) => {
-    try {
-        const types = await TourType.find();
-        res.json(types);
-    } catch (err) {
-        console.error('Error fetching tour types:', err);
-        res.status(500).json({ message: err.message });
-    }
-};
 
 // Create a new tour
 exports.createTour = async (req, res) => {
@@ -74,8 +63,14 @@ exports.createTour = async (req, res) => {
             });
         }
 
-        const tour = new Tour(req.body);
-        await tour.populate('tourType');
+        const data = { ...req.body };
+        if (data.primaryGuide === '') data.primaryGuide = null;
+        if (data.assignedGuides) {
+            data.assignedGuides = data.assignedGuides.filter(id => id !== '');
+        }
+
+        const tour = new Tour(data);
+        await tour.populate('primaryGuide');
         await calendarService.syncTourToGuides(tour);
 
         const newTour = await tour.save();
@@ -107,11 +102,17 @@ exports.updateTour = async (req, res) => {
 
         const oldGuideIds = oldTour.assignedGuides.map(id => id.toString());
 
+        const data = { ...req.body };
+        if (data.primaryGuide === '') data.primaryGuide = null;
+        if (data.assignedGuides) {
+            data.assignedGuides = data.assignedGuides.filter(id => id !== '');
+        }
+
         const updatedTour = await Tour.findByIdAndUpdate(
             req.params.id,
-            req.body,
+            data,
             { returnDocument: 'after' }
-        ).populate('tourType');
+        ).populate('primaryGuide');
 
         if (updatedTour) {
             await calendarService.syncTourToGuides(updatedTour, oldGuideIds);

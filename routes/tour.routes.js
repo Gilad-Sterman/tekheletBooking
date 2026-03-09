@@ -8,6 +8,5 @@ router.post('/', auth, isCoordinator, tourController.createTour);
 router.put('/:id', auth, tourController.updateTour);
 router.delete('/:id', auth, isCoordinator, tourController.deleteTour);
 
-router.get('/types', auth, tourController.getTourTypes);
 
 module.exports = router;

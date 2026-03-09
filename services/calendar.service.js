@@ -28,16 +28,34 @@ const calendarService = {
         return google.calendar({ version: 'v3', auth });
     },
 
-    async createEvent(tour, userId) {
-        const calendar = await this.getCalendar(userId);
-        if (!calendar) return null;
+    async buildEventResource(tour) {
+        const summary = `PT Tour - ${tour.title}`;
 
-        const event = {
-            summary: tour.title,
-            description: `Tour: ${tour.tourType?.name || 'Standard'}\n` +
-                `Group Size: ${tour.participants?.groupSize || 1}\n` +
-                `Contact: ${tour.participants?.name || 'N/A'} (${tour.participants?.email || 'No email'})\n` +
-                `Notes: ${tour.participants?.notes || 'None'}`,
+        // Build groups summary
+        let groupsText = '';
+        if (tour.groups && tour.groups.length > 0) {
+            groupsText = '\n--- GROUPS ---\n' + tour.groups.map(g => {
+                const counts = g.counts || {};
+                const groupSize = (counts.regular || 0) + (counts.seniorSoldier || 0) + (counts.child || 0);
+                return `- ${g.name} (${g.type}): ${groupSize} ppl\n  Status: ${g.status}\n  Leader: ${g.contact?.leaderName || 'N/A'} (${g.contact?.leaderPhone || 'No phone'})`;
+            }).join('\n\n');
+        }
+
+        const appUrl = process.env.CLIENT_URL || 'http://localhost:5173';
+        const tourLink = `${appUrl}/?tourId=${tour._id}`;
+
+        const description = `Language: ${tour.language || 'English'}\n` +
+            `Total Participants: ${tour.totalParticipants || 0}\n` +
+            `Workshop: ${tour.isWorkshop ? 'Yes' : 'No'}\n` +
+            `Shiur: ${tour.isShiur ? 'Yes' : 'No'}\n` +
+            (tour.specialRequests ? `Special Requests: ${tour.specialRequests}\n` : '') +
+            (tour.sensitivities ? `Sensitivities: ${tour.sensitivities}\n` : '') +
+            groupsText +
+            `\n\n🔗 View Full Details: ${tourLink}`;
+
+        return {
+            summary,
+            description,
             start: {
                 dateTime: `${tour.date}T${tour.startTime}:00`,
                 timeZone: 'UTC'
@@ -47,6 +65,13 @@ const calendarService = {
                 timeZone: 'UTC'
             }
         };
+    },
+
+    async createEvent(tour, userId) {
+        const calendar = await this.getCalendar(userId);
+        if (!calendar) return null;
+
+        const event = await this.buildEventResource(tour);
 
         try {
             const res = await calendar.events.insert({
@@ -64,21 +89,7 @@ const calendarService = {
         const calendar = await this.getCalendar(userId);
         if (!calendar) return;
 
-        const event = {
-            summary: tour.title,
-            description: `Tour: ${tour.tourType?.name || 'Standard'}\n` +
-                `Group Size: ${tour.participants?.groupSize || 1}\n` +
-                `Contact: ${tour.participants?.name || 'N/A'} (${tour.participants?.email || 'No email'})\n` +
-                `Notes: ${tour.participants?.notes || 'None'}`,
-            start: {
-                dateTime: `${tour.date}T${tour.startTime}:00`,
-                timeZone: 'UTC'
-            },
-            end: {
-                dateTime: `${tour.date}T${tour.endTime}:00`,
-                timeZone: 'UTC'
-            }
-        };
+        const event = await this.buildEventResource(tour);
 
         try {
             await calendar.events.update({
@@ -151,7 +162,7 @@ const calendarService = {
             const mongoose = require('mongoose');
             const tours = await Tour.find({
                 assignedGuides: new mongoose.Types.ObjectId(userId)
-            }).populate('tourType');
+            });
 
             console.log(`[Catch-up Sync] Found ${tours.length} tours for user ${userId}. Checking status...`);
 
