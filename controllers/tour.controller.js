@@ -57,9 +57,16 @@ exports.createTour = async (req, res) => {
         }
 
         const overlap = await hasOverlap(req.body);
-        if (overlap) {
-            return res.status(400).json({
-                message: `Scheduling conflict: overlaps with "${overlap.title}" (${overlap.startTime}-${overlap.endTime})`
+        if (overlap && !req.body.forceCreate) {
+            return res.status(409).json({
+                conflict: true,
+                message: `This tour overlaps with "${overlap.title}" (${overlap.startTime}-${overlap.endTime}). This may be intentional for groups in different stages.`,
+                conflictingTour: {
+                    title: overlap.title,
+                    startTime: overlap.startTime,
+                    endTime: overlap.endTime,
+                    date: overlap.date
+                }
             });
         }
 
@@ -91,9 +98,16 @@ exports.updateTour = async (req, res) => {
         }
 
         const overlap = await hasOverlap(req.body, req.params.id);
-        if (overlap) {
-            return res.status(400).json({
-                message: `Scheduling conflict: overlaps with "${overlap.title}" (${overlap.startTime}-${overlap.endTime})`
+        if (overlap && !req.body.forceUpdate) {
+            return res.status(409).json({
+                conflict: true,
+                message: `This tour overlaps with "${overlap.title}" (${overlap.startTime}-${overlap.endTime}). This may be intentional for groups in different stages.`,
+                conflictingTour: {
+                    title: overlap.title,
+                    startTime: overlap.startTime,
+                    endTime: overlap.endTime,
+                    date: overlap.date
+                }
             });
         }
 

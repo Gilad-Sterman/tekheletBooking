@@ -5,7 +5,7 @@ const groupSchema = new mongoose.Schema({
     type: { type: String, required: true }, // e.g., Individual/Family, Day School, etc.
     status: {
         type: String,
-        enum: ['Scheduled', 'Confirmed', 'Cancelled'],
+        enum: ['Scheduled', 'Confirmed', 'Cancelled', 'No Show'],
         default: 'Scheduled'
     },
     counts: {
@@ -28,7 +28,7 @@ const groupSchema = new mongoose.Schema({
         leaderName: String,
         leaderPhone: String,
         leaderEmail: String,
-        externalGuide: String,
+        externalGuideName: String,
         externalGuidePhone: String,
         externalGuideEmail: String
     },
@@ -42,6 +42,7 @@ const groupSchema = new mongoose.Schema({
         priceReason: String,
         paymentLinkSent: { type: Boolean, default: false },
         prepaid: { type: Boolean, default: false },
+        notes: String,
         history: [String]
     },
     visitDetails: {
@@ -77,8 +78,8 @@ const tourSchema = new mongoose.Schema({
     color: { type: String, default: '#134869' }, // Default calendar color
 
     language: { type: String, required: true, default: 'English' },
-    primaryGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-    assignedGuides: [{ type: mongoose.Schema.Types.ObjectId, ref: 'User' }],
+    primaryGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'Guide' },
+    assignedGuides: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Guide' }],
 
     isWorkshop: { type: Boolean, default: false },
     isShiur: { type: Boolean, default: false },

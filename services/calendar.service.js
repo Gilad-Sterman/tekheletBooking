@@ -1,5 +1,6 @@
 const { google } = require('googleapis');
 const User = require('../models/user.model');
+const Guide = require('../models/guide.model');
 const Tour = require('../models/tour.model');
 
 const getOAuthClient = (tokens) => {
@@ -119,13 +120,22 @@ const calendarService = {
     },
 
     async syncTourToGuides(tour, oldGuideIds = []) {
+        // Convert guide IDs to user IDs for calendar sync
+        const getGuideUserIds = async (guideIds) => {
+            const guides = await Guide.find({ _id: { $in: guideIds }, userId: { $exists: true, $ne: null } }).populate('userId');
+            return guides.map(guide => guide.userId?._id?.toString()).filter(Boolean);
+        };
+
         const currentGuideIds = tour.assignedGuides.map(id => id.toString());
-        const removedGuideIds = oldGuideIds.filter(id => !currentGuideIds.includes(id));
-        const addedGuideIds = currentGuideIds.filter(id => !oldGuideIds.includes(id));
-        const existingGuideIds = currentGuideIds.filter(id => oldGuideIds.includes(id));
+        const currentUserIds = await getGuideUserIds(currentGuideIds);
+        const oldUserIds = await getGuideUserIds(oldGuideIds);
+
+        const removedUserIds = oldUserIds.filter(id => !currentUserIds.includes(id));
+        const addedUserIds = currentUserIds.filter(id => !oldUserIds.includes(id));
+        const existingUserIds = currentUserIds.filter(id => oldUserIds.includes(id));
 
         // 1. Handle Removals
-        for (const userId of removedGuideIds) {
+        for (const userId of removedUserIds) {
             const eventId = tour.googleEvents?.get(userId);
             if (eventId) {
                 await this.deleteEvent(userId, eventId);
@@ -134,7 +144,7 @@ const calendarService = {
         }
 
         // 2. Handle Additions
-        for (const userId of addedGuideIds) {
+        for (const userId of addedUserIds) {
             const eventId = await this.createEvent(tour, userId);
             if (eventId) {
                 if (!tour.googleEvents) tour.googleEvents = new Map();
@@ -143,7 +153,7 @@ const calendarService = {
         }
 
         // 3. Handle Updates for existing
-        for (const userId of existingGuideIds) {
+        for (const userId of existingUserIds) {
             const eventId = tour.googleEvents?.get(userId);
             if (eventId) {
                 await this.updateEvent(tour, userId, eventId);

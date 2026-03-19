@@ -20,7 +20,13 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/tourBooking')
-    .then(() => console.log('Connected to MongoDB'))
+    .then(async () => {
+        console.log('Connected to MongoDB');
+        
+        // Run automatic seeding after successful DB connection
+        const autoSeed = require('./scripts/autoSeed');
+        await autoSeed();
+    })
     .catch(err => console.error('MongoDB connection error:', err));
 
 // Routes
@@ -32,11 +38,15 @@ app.get('/api/status', (req, res) => {
 const tourRoutes = require('./routes/tour.routes');
 const authRoutes = require('./routes/auth.routes');
 const userRoutes = require('./routes/user.routes');
+const configRoutes = require('./routes/config.routes');
+const guideRoutes = require('./routes/guide.routes');
 
 // Use routes
 app.use('/api/tours', tourRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/config', configRoutes);
+app.use('/api/guides', guideRoutes);
 
 // Catch-all to serve React app for SPA routing
 app.get(/^(?!\/api).+/, (req, res) => {
