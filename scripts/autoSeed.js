@@ -16,21 +16,22 @@ const autoSeed = async () => {
         console.log(`📊 Found ${configCount} AppConfig documents`);
 
         if (configCount === 0) {
-            console.log('🔧 AppConfig collection is empty, seeding...');
+            console.log('🔧 AppConfig collection is empty, seeding all configs...');
             await seedAppConfigData();
         } else {
-            console.log('✅ AppConfig collection already seeded');
+            console.log('🔧 Checking for missing configurations...');
+            await seedMissingConfigs();
         }
 
-        // Check Guides collection
+        // Check Guides collection (production-safe - only seed if completely empty)
         const guidesCount = await Guide.countDocuments();
         console.log(`👥 Found ${guidesCount} Guide documents`);
 
         if (guidesCount === 0) {
-            console.log('🔧 Guides collection is empty, seeding...');
+            console.log('🔧 Guides collection is empty, seeding sample guides...');
             await seedGuidesData();
         } else {
-            console.log('✅ Guides collection already seeded');
+            console.log('✅ Guides collection already has data - skipping guide seeding for production safety');
         }
 
         console.log('🎉 Automatic seeding check completed successfully!');
@@ -42,10 +43,41 @@ const autoSeed = async () => {
 };
 
 /**
- * Seed AppConfig data without connecting to DB (already connected)
+ * Check for and seed any missing configurations
  */
-const seedAppConfigData = async () => {
-    const seedConfigurations = [
+const seedMissingConfigs = async () => {
+    const requiredConfigs = getRequiredConfigurations();
+    let addedCount = 0;
+
+    for (const config of requiredConfigs) {
+        const exists = await AppConfig.findOne({ 
+            category: config.category, 
+            key: config.key 
+        });
+
+        if (!exists) {
+            await AppConfig.create({
+                ...config,
+                isActive: true,
+                lastModified: new Date()
+            });
+            console.log(`  ✓ Added missing config: ${config.category}/${config.key}`);
+            addedCount++;
+        }
+    }
+
+    if (addedCount === 0) {
+        console.log('✅ All configurations are present');
+    } else {
+        console.log(`✅ Added ${addedCount} missing configuration(s)`);
+    }
+};
+
+/**
+ * Get the list of required configurations
+ */
+const getRequiredConfigurations = () => {
+    return [
         // Group Types Configuration
         {
             category: 'group_types',
@@ -130,8 +162,29 @@ const seedAppConfigData = async () => {
                 minAdvanceBooking: 24 // hours
             },
             description: 'Default settings for tour creation'
+        },
+
+        // Payment Status Configuration
+        {
+            category: 'payment_status',
+            key: 'available_options',
+            value: [
+                { id: 'pending', label: 'Pending', isActive: true },
+                { id: 'paid', label: 'Paid', isActive: true },
+                { id: 'partial', label: 'Partial', isActive: true },
+                { id: 'cancelled', label: 'Cancelled', isActive: true },
+                { id: 'refunded', label: 'Refunded', isActive: true }
+            ],
+            description: 'Available payment status options for post-tour tracking'
         }
     ];
+};
+
+/**
+ * Seed AppConfig data without connecting to DB (already connected)
+ */
+const seedAppConfigData = async () => {
+    const seedConfigurations = getRequiredConfigurations();
 
     for (const config of seedConfigurations) {
         await AppConfig.create({
