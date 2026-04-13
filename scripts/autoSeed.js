@@ -47,29 +47,42 @@ const autoSeed = async () => {
  */
 const seedMissingConfigs = async () => {
     const requiredConfigs = getRequiredConfigurations();
-    let addedCount = 0;
+    let syncCount = 0;
 
     for (const config of requiredConfigs) {
-        const exists = await AppConfig.findOne({ 
+        const existing = await AppConfig.findOne({ 
             category: config.category, 
             key: config.key 
         });
 
-        if (!exists) {
+        if (!existing) {
             await AppConfig.create({
                 ...config,
                 isActive: true,
                 lastModified: new Date()
             });
             console.log(`  ✓ Added missing config: ${config.category}/${config.key}`);
-            addedCount++;
+            syncCount++;
+        } else {
+            // Check if the value has changed (simple stringify comparison for config objects)
+            const newVal = JSON.stringify(config.value);
+            const oldVal = JSON.stringify(existing.value);
+            
+            if (newVal !== oldVal) {
+                existing.value = config.value;
+                existing.description = config.description || existing.description;
+                existing.lastModified = new Date();
+                await existing.save();
+                console.log(`  🔄 Synced existing config: ${config.category}/${config.key}`);
+                syncCount++;
+            }
         }
     }
 
-    if (addedCount === 0) {
-        console.log('✅ All configurations are present');
+    if (syncCount === 0) {
+        console.log('✅ All configurations are up to date');
     } else {
-        console.log(`✅ Added ${addedCount} missing configuration(s)`);
+        console.log(`✅ Synced ${syncCount} configuration(s)`);
     }
 };
 
@@ -158,10 +171,25 @@ const getRequiredConfigurations = () => {
             value: {
                 defaultColor: '#134869',
                 defaultDuration: 90, // minutes
+                regularDuration: 60, // minutes
+                workshopDuration: 90, // minutes
                 maxParticipantsPerGroup: 50,
                 minAdvanceBooking: 24 // hours
             },
             description: 'Default settings for tour creation'
+        },
+
+        // Booking Sources Configuration
+        {
+            category: 'booking_sources',
+            key: 'available_options',
+            value: [
+                { id: 'email', label: 'Email', isActive: true },
+                { id: 'walk_in', label: 'Walk in', isActive: true },
+                { id: 'we_reached_out', label: 'We reached out', isActive: true },
+                { id: 'agent', label: 'Tour guide / Travel Agent', isActive: true }
+            ],
+            description: 'Available sources for bookings'
         },
 
         // Payment Status Configuration
