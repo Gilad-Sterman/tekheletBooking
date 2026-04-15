@@ -41,6 +41,7 @@ const userRoutes = require('./routes/user.routes');
 const configRoutes = require('./routes/config.routes');
 const guideRoutes = require('./routes/guide.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
+const infoMessageRoutes = require('./routes/infoMessage.routes');
 
 // Use routes
 app.use('/api/tours', tourRoutes);
@@ -49,6 +50,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/config', configRoutes);
 app.use('/api/guides', guideRoutes);
 app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/info-messages', infoMessageRoutes);
 
 // Catch-all to serve React app for SPA routing
 app.get(/^(?!\/api).+/, (req, res) => {

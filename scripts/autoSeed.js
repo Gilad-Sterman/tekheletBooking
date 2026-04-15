@@ -204,6 +204,19 @@ const getRequiredConfigurations = () => {
                 { id: 'refunded', label: 'Refunded', isActive: true }
             ],
             description: 'Available payment status options for post-tour tracking'
+        },
+        
+        // Info Message Types Configuration
+        {
+            category: 'info_message_types',
+            key: 'available_options',
+            value: [
+                { id: 'info', label: 'General Info', color: '#8b5cf6', isActive: true },
+                { id: 'holiday', label: 'Holiday', color: '#f59e0b', isActive: true },
+                { id: 'maintenance', label: 'Maintenance', color: '#ef4444', isActive: true },
+                { id: 'staff', label: 'Staff Out', color: '#3b82f6', isActive: true }
+            ],
+            description: 'Available categories for info messages'
         }
     ];
 };
