@@ -56,21 +56,29 @@ exports.getDashboardStatistics = async (req, res) => {
 /**
  * Get date filter based on range
  */
-function getDateFilter(dateRange) {
+function getDateFilter(dateRange, isPrevious = false) {
     const now = new Date();
+    const formatStr = 'yyyy-MM-dd';
     
+    let months;
     switch (dateRange) {
-        case '1month':
-            return { $gte: format(subMonths(now, 1), 'yyyy-MM-dd') };
-        case '3months':
-            return { $gte: format(subMonths(now, 3), 'yyyy-MM-dd') };
-        case '6months':
-            return { $gte: format(subMonths(now, 6), 'yyyy-MM-dd') };
-        case '1year':
-            return { $gte: format(subMonths(now, 12), 'yyyy-MM-dd') };
-        case 'all':
-        default:
-            return null;
+        case '1month': months = 1; break;
+        case '3months': months = 3; break;
+        case '6months': months = 6; break;
+        case '1year': months = 12; break;
+        case 'all': return null;
+        default: return null;
+    }
+
+    if (!isPrevious) {
+        return { 
+            $gte: format(subMonths(now, months), formatStr)
+        };
+    } else {
+        return {
+            $gte: format(subMonths(now, months * 2), formatStr),
+            $lt: format(subMonths(now, months), formatStr)
+        };
     }
 }
 
@@ -94,87 +102,121 @@ function getTourTypeFilter(tourType) {
  * Get overview statistics
  */
 async function getOverviewStatistics(matchCriteria, groupMatchCriteria, dateRange) {
-    const pipeline = [
-        { $match: matchCriteria },
-        ...(Object.keys(groupMatchCriteria).length > 0 ? [{ $match: groupMatchCriteria }] : []),
-        {
-            $group: {
-                _id: null,
-                totalTours: { $sum: 1 },
-                completedTours: {
-                    $sum: {
-                        $cond: [{ $lt: ['$date', format(new Date(), 'yyyy-MM-dd')] }, 1, 0]
-                    }
-                },
-                totalGroups: { $sum: { $size: '$groups' } },
-                confirmedGroups: {
-                    $sum: {
-                        $size: {
-                            $filter: {
+    const getStats = async (criteria) => {
+        const pipeline = [
+            { $match: criteria },
+            ...(Object.keys(groupMatchCriteria).length > 0 ? [{ $match: groupMatchCriteria }] : []),
+            {
+                $group: {
+                    _id: null,
+                    totalTours: { $sum: 1 },
+                    completedTours: {
+                        $sum: {
+                            $cond: [{ $lt: ['$date', format(new Date(), 'yyyy-MM-dd')] }, 1, 0]
+                        }
+                    },
+                    totalGroups: { $sum: { $size: '$groups' } },
+                    confirmedGroups: {
+                        $sum: {
+                            $size: {
+                                $filter: {
+                                    input: '$groups',
+                                    cond: { $eq: ['$$this.status', 'Confirmed'] }
+                                }
+                            }
+                        }
+                    },
+                    totalParticipants: {
+                        $sum: {
+                            $reduce: {
                                 input: '$groups',
-                                cond: { $eq: ['$$this.status', 'Confirmed'] }
+                                initialValue: 0,
+                                in: {
+                                    $add: [
+                                        '$$value',
+                                        { $add: [
+                                            { $ifNull: ['$$this.counts.regular', 0] },
+                                            { $ifNull: ['$$this.counts.seniorSoldier', 0] },
+                                            { $ifNull: ['$$this.counts.child', 0] }
+                                        ]}
+                                    ]
+                                }
                             }
                         }
-                    }
-                },
-                totalParticipants: {
-                    $sum: {
-                        $reduce: {
-                            input: '$groups',
-                            initialValue: 0,
-                            in: {
-                                $add: [
-                                    '$$value',
-                                    { $add: [
-                                        { $ifNull: ['$$this.counts.regular', 0] },
-                                        { $ifNull: ['$$this.counts.seniorSoldier', 0] },
-                                        { $ifNull: ['$$this.counts.child', 0] }
-                                    ]}
-                                ]
-                            }
-                        }
-                    }
-                },
-                totalRevenue: {
-                    $sum: {
-                        $reduce: {
-                            input: '$groups',
-                            initialValue: 0,
-                            in: {
-                                $add: [
-                                    '$$value',
-                                    { $ifNull: ['$$this.booking.totalCost', 0] },
-                                    { $ifNull: ['$$this.postVisit.donation.amount', 0] }
-                                ]
+                    },
+                    totalRevenue: {
+                        $sum: {
+                            $reduce: {
+                                input: '$groups',
+                                initialValue: 0,
+                                in: {
+                                    $add: [
+                                        '$$value',
+                                        { $ifNull: ['$$this.booking.totalCost', 0] },
+                                        { $ifNull: ['$$this.postVisit.donation.amount', 0] }
+                                    ]
+                                }
                             }
                         }
                     }
                 }
             }
-        }
-    ];
+        ];
 
-    const result = await Tour.aggregate(pipeline);
-    const stats = result[0] || {
-        totalTours: 0,
-        completedTours: 0,
-        totalGroups: 0,
-        confirmedGroups: 0,
-        totalParticipants: 0,
-        totalRevenue: 0
+        const result = await Tour.aggregate(pipeline);
+        return result[0] || {
+            totalTours: 0,
+            completedTours: 0,
+            totalGroups: 0,
+            confirmedGroups: 0,
+            totalParticipants: 0,
+            totalRevenue: 0
+        };
     };
 
-    // Calculate averages
-    stats.avgParticipantsPerTour = stats.totalTours > 0 ? Math.round(stats.totalParticipants / stats.totalTours) : 0;
-    stats.avgRevenuePerTour = stats.totalTours > 0 ? Math.round(stats.totalRevenue / stats.totalTours) : 0;
+    // Get current period stats
+    const currentStats = await getStats(matchCriteria);
 
-    // Calculate trends (simplified - would need historical comparison for real trends)
-    stats.toursTrend = 12; // Placeholder
-    stats.groupsTrend = 8;
-    stats.participantsTrend = 15;
-    stats.revenueTrend = 22;
+    // Calculate previous period match criteria
+    const prevDateFilter = getDateFilter(dateRange, true);
+    let previousStats = null;
 
-    return stats;
+    if (prevDateFilter) {
+        const prevMatchCriteria = {
+            ...matchCriteria,
+            date: prevDateFilter
+        };
+        previousStats = await getStats(prevMatchCriteria);
+    }
+
+    // Function to calculate % change
+    const calculateTrend = (current, previous) => {
+        if (!previous || previous === 0) return current > 0 ? 100 : 0;
+        return Math.round(((current - previous) / previous) * 100);
+    };
+
+    // Calculate averages for current period
+    currentStats.avgParticipantsPerTour = currentStats.totalTours > 0 
+        ? Math.round(currentStats.totalParticipants / currentStats.totalTours) 
+        : 0;
+    currentStats.avgRevenuePerTour = currentStats.totalTours > 0 
+        ? Math.round(currentStats.totalRevenue / currentStats.totalTours) 
+        : 0;
+
+    // Calculate actual trends
+    if (previousStats) {
+        currentStats.toursTrend = calculateTrend(currentStats.totalTours, previousStats.totalTours);
+        currentStats.groupsTrend = calculateTrend(currentStats.totalGroups, previousStats.totalGroups);
+        currentStats.participantsTrend = calculateTrend(currentStats.totalParticipants, previousStats.totalParticipants);
+        currentStats.revenueTrend = calculateTrend(currentStats.totalRevenue, previousStats.totalRevenue);
+    } else {
+        currentStats.toursTrend = 0;
+        currentStats.groupsTrend = 0;
+        currentStats.participantsTrend = 0;
+        currentStats.revenueTrend = 0;
+    }
+
+    return currentStats;
 }
 
 /**
