@@ -5,7 +5,7 @@ const groupSchema = new mongoose.Schema({
     type: { type: String, required: true }, // e.g., Individual/Family, Day School, etc.
     status: {
         type: String,
-        enum: ['Scheduled', 'Confirmed', 'Cancelled', 'No Show'],
+        enum: ['Scheduled', 'Tentative', 'Confirmed', 'Cancelled', 'No Show'],
         default: 'Scheduled'
     },
     counts: {
