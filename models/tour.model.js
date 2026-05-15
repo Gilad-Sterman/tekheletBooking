@@ -100,7 +100,8 @@ const tourSchema = new mongoose.Schema({
         type: Map,
         of: mongoose.Schema.Types.Mixed,
         default: {}
-    }
+    },
+    endTimeOverride: { type: Boolean, default: false }
 }, { timestamps: true });
 
 // Virtual for FullCalendar compatibility
