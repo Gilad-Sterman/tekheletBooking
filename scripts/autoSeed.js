@@ -63,20 +63,9 @@ const seedMissingConfigs = async () => {
             });
             console.log(`  ✓ Added missing config: ${config.category}/${config.key}`);
             syncCount++;
-        } else {
-            // Check if the value has changed (simple stringify comparison for config objects)
-            const newVal = JSON.stringify(config.value);
-            const oldVal = JSON.stringify(existing.value);
-            
-            if (newVal !== oldVal) {
-                existing.value = config.value;
-                existing.description = config.description || existing.description;
-                existing.lastModified = new Date();
-                await existing.save();
-                console.log(`  🔄 Synced existing config: ${config.category}/${config.key}`);
-                syncCount++;
-            }
         }
+        // Existing configs are intentionally never overwritten —
+        // values may have been customized in the DB (e.g. colors, labels)
     }
 
     if (syncCount === 0) {
