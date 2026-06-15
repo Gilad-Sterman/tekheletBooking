@@ -11,7 +11,8 @@ const groupSchema = new mongoose.Schema({
     counts: {
         regular: { type: Number, default: 0 },
         seniorSoldier: { type: Number, default: 0 },
-        child: { type: Number, default: 0 }
+        child: { type: Number, default: 0 },
+        group: { type: Number, default: 0 }
     },
     location: {
         country: String,
@@ -101,7 +102,8 @@ const tourSchema = new mongoose.Schema({
         of: mongoose.Schema.Types.Mixed,
         default: {}
     },
-    endTimeOverride: { type: Boolean, default: false }
+    endTimeOverride: { type: Boolean, default: false },
+    createdBy: { type: String, default: '' }
 }, { timestamps: true });
 
 // Virtual for FullCalendar compatibility
@@ -115,7 +117,7 @@ tourSchema.virtual('totalParticipants').get(function () {
     if (!this.groups || this.groups.length === 0) return 0;
     return this.groups.reduce((sum, group) => {
         const counts = group.counts || {};
-        return sum + (counts.regular || 0) + (counts.seniorSoldier || 0) + (counts.child || 0);
+        return sum + (counts.regular || 0) + (counts.seniorSoldier || 0) + (counts.child || 0) + (counts.group || 0);
     }, 0);
 });
 

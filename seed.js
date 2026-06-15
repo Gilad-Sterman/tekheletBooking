@@ -3,6 +3,7 @@ require('dotenv').config();
 
 const User = require('./models/user.model');
 const Tour = require('./models/tour.model');
+const AppConfig = require('./models/appConfig.model');
 
 const seedData = async () => {
     try {
@@ -237,6 +238,25 @@ const seedData = async () => {
         ]);
 
         console.log('Seed: 5 Sample Tours created');
+
+        // Upsert creator_names into AppConfig (safe — won't delete other configs)
+        await AppConfig.findOneAndUpdate(
+            { category: 'creator_names', key: 'available_options' },
+            {
+                category: 'creator_names',
+                key: 'available_options',
+                value: [
+                    { id: 'baruch_sterman', label: 'Baruch Sterman', isActive: true },
+                    { id: 'judy_sterman', label: 'Judy Sterman', isActive: true },
+                    { id: 'david_orbach', label: 'David Orbach', isActive: true },
+                    { id: 'moshe_stavsky', label: 'Moshe Stavsky', isActive: true }
+                ],
+                isActive: true,
+                description: 'Tour creator / booking names'
+            },
+            { upsert: true, new: true, setDefaultsOnInsert: true }
+        );
+        console.log('Seed: creator_names AppConfig upserted');
         console.log('Seeding completed successfully!');
         process.exit(0);
     } catch (err) {

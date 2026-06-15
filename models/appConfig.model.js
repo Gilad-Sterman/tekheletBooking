@@ -4,7 +4,7 @@ const appConfigSchema = new mongoose.Schema({
     category: { 
         type: String, 
         required: true,
-        enum: ['group_types', 'group_status', 'pricing', 'languages', 'tour_settings', 'payment_status', 'booking_sources', 'info_message_types']
+        enum: ['group_types', 'group_status', 'pricing', 'languages', 'tour_settings', 'payment_status', 'booking_sources', 'info_message_types', 'creator_names']
     },
     key: { 
         type: String, 
