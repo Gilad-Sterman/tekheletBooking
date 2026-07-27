@@ -6,10 +6,10 @@ const { startOfMonth, endOfMonth, subMonths, format } = require('date-fns');
  */
 exports.getDashboardStatistics = async (req, res) => {
     try {
-        const { dateRange = '6months', tourType = 'all', groupType = 'all', guide = 'all', language = 'all' } = req.query;
+        const { dateRange = '6months', specificMonth = '', tourType = 'all', groupType = 'all', guide = 'all', language = 'all' } = req.query;
         
-        // Calculate date filter
-        const dateFilter = getDateFilter(dateRange);
+        // Calculate date filter - specificMonth overrides dateRange
+        const dateFilter = specificMonth ? getMonthFilter(specificMonth) : getDateFilter(dateRange);
         
         // Build match criteria
         const matchCriteria = {
@@ -31,7 +31,7 @@ exports.getDashboardStatistics = async (req, res) => {
             financialStats,
             engagementStats
         ] = await Promise.all([
-            getOverviewStatistics(matchCriteria, groupMatchCriteria, dateRange),
+            getOverviewStatistics(matchCriteria, groupMatchCriteria, specificMonth ? null : dateRange),
             getTimeBasedData(matchCriteria, groupMatchCriteria, dateRange),
             getGroupTypeDistribution(matchCriteria, groupMatchCriteria),
             getGeographicDistribution(matchCriteria, groupMatchCriteria),
@@ -80,6 +80,18 @@ function getDateFilter(dateRange, isPrevious = false) {
             $lt: format(subMonths(now, months), formatStr)
         };
     }
+}
+
+/**
+ * Get date filter for a specific month (YYYY-MM format)
+ */
+function getMonthFilter(yearMonth) {
+    const [year, month] = yearMonth.split('-').map(Number);
+    const start = `${yearMonth}-01`;
+    const nextMonth = month === 12 ? 1 : month + 1;
+    const nextYear = month === 12 ? year + 1 : year;
+    const end = `${nextYear}-${String(nextMonth).padStart(2, '0')}-01`;
+    return { $gte: start, $lt: end };
 }
 
 /**
