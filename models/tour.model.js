@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const groupSchema = new mongoose.Schema({
-    name: { type: String, required: true },
+    name: { type: String, default: '' },
     type: { type: String, required: true }, // e.g., Individual/Family, Day School, etc.
     status: {
         type: String,
