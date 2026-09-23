@@ -1,6 +1,7 @@
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
+const cron = require('node-cron');
 require('dotenv').config();
 
 const app = express();
@@ -42,6 +43,7 @@ const configRoutes = require('./routes/config.routes');
 const guideRoutes = require('./routes/guide.routes');
 const dashboardRoutes = require('./routes/dashboard.routes');
 const infoMessageRoutes = require('./routes/infoMessage.routes');
+const mailRoutes = require('./routes/mail.routes');
 
 // Use routes
 app.use('/api/tours', tourRoutes);
@@ -51,6 +53,7 @@ app.use('/api/config', configRoutes);
 app.use('/api/guides', guideRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/info-messages', infoMessageRoutes);
+app.use('/api/mail', mailRoutes);
 
 // Catch-all to serve React app for SPA routing
 app.get(/^(?!\/api).+/, (req, res) => {
@@ -59,6 +62,14 @@ app.get(/^(?!\/api).+/, (req, res) => {
 
 app.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
+
+    // Phase C: sweep sent drafts into their group folders every 30 minutes.
+    // Runs entirely within this process — no separate worker needed.
+    const { sweepSentDrafts } = require('./services/automation.service');
+    cron.schedule('*/30 * * * *', () => {
+        sweepSentDrafts().catch(e => console.error('[sweep] Cron error:', e.message));
+    });
+    console.log('[sweep] Filed-drafts sweep scheduled (every 30 min)');
 });
 
 module.exports = app;

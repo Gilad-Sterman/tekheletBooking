@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 const AppConfig = require('../models/appConfig.model');
 const Guide = require('../models/guide.model');
 const User = require('../models/user.model');
+const EmailTemplate = require('../models/emailTemplate.model');
 
 /**
  * Automatic seeding system for production deployment
@@ -33,6 +34,12 @@ const autoSeed = async () => {
         } else {
             console.log('✅ Guides collection already has data - skipping guide seeding for production safety');
         }
+
+        // Patch group_status to include Awaiting Confirmation if missing
+        await patchGroupStatusConfig();
+
+        // Seed email templates
+        await seedMissingEmailTemplates();
 
         console.log('🎉 Automatic seeding check completed successfully!');
     } catch (error) {
@@ -285,6 +292,170 @@ const seedGuidesData = async () => {
             console.log(`  ✓ Created sample guide: ${guide.name}`);
         }
     }
+};
+
+/**
+ * Additive patch: insert 'Awaiting Confirmation' into the group_status AppConfig
+ * array if it isn't already present. Safe to run on every startup.
+ */
+const patchGroupStatusConfig = async () => {
+    const config = await AppConfig.findOne({ category: 'group_status', key: 'available_options' });
+    if (!config || !Array.isArray(config.value)) return;
+
+    const already = config.value.some(o => o.id === 'awaiting_confirmation');
+    if (already) return;
+
+    // Insert after 'scheduled'
+    const idx = config.value.findIndex(o => o.id === 'scheduled');
+    const insertAt = idx >= 0 ? idx + 1 : 1;
+    config.value.splice(insertAt, 0, { id: 'awaiting_confirmation', label: 'Awaiting Confirmation', isActive: true });
+    config.markModified('value');
+    await config.save();
+    console.log('  ✓ Added "Awaiting Confirmation" to group_status config');
+};
+
+/**
+ * Seed any email templates that don't yet exist (key + language is the unique key).
+ */
+const seedMissingEmailTemplates = async () => {
+    const templates = getEmailTemplates();
+    let added = 0;
+    for (const t of templates) {
+        const exists = await EmailTemplate.findOne({ key: t.key, language: t.language });
+        if (!exists) {
+            await EmailTemplate.create(t);
+            console.log(`  ✓ Seeded email template: ${t.key} (${t.language})`);
+            added++;
+        }
+    }
+    if (added === 0) console.log('✅ Email templates are up to date');
+};
+
+const getEmailTemplates = () => {
+    const en = (key, subject, body) => ({ key, language: 'en', mode: 'draft', subject, body });
+    const he = (key, subject, body) => ({ key, language: 'he', mode: 'draft', subject, body });
+
+    return [
+        en('awaiting_confirmation',
+            'Tekhelet Visiting Center Tour – Booking Received',
+            `Thank you for booking a tour at the Tekhelet Visiting Center!
+
+We have your booking on file with the following details:
+
+  Group:        {{groupName}}
+  Date:         {{tourDateFull}}
+  Time:         {{startTime}} – {{endTime}}
+  Participants: {{participantSummary}}{{programLine}}{{costLine}}
+
+Please reply to confirm these details are correct. Once confirmed we will be in touch with next steps.
+
+We look forward to welcoming you!
+
+The Tekhelet Team`
+        ),
+
+        he('awaiting_confirmation',
+            'סיור מרכז מבקרים פתיל תכלת – קיבלנו את ההזמנה',
+            `תודה שהזמנת סיור במרכז מבקרים פתיל תכלת!
+
+קיבלנו את פרטי ההזמנה שלך:
+
+  קבוצה:    {{groupName}}
+  תאריך:    {{tourDateFull}}
+  שעה:      {{startTime}} – {{endTime}}
+  משתתפים:  {{participantSummary}}{{programLine}}{{costLine}}
+
+אנא השב/י לאימייל זה לאישור שהפרטים נכונים.
+
+מצפים לראותך!
+
+צוות תכלת`
+        ),
+
+        en('confirmed',
+            'Tekhelet Visiting Center Tour – Booking Confirmed',
+            `Great news – your tour at the Tekhelet Visiting Center is confirmed!
+
+  Group:        {{groupName}}
+  Date:         {{tourDateFull}}
+  Time:         {{startTime}} – {{endTime}}
+  Participants: {{participantSummary}}{{programLine}}
+  Total:        ₪{{totalCost}}
+
+We look forward to seeing you on {{tourDateFull}}.
+
+The Tekhelet Team`
+        ),
+
+        he('confirmed',
+            'סיור מרכז מבקרים פתיל תכלת – ההזמנה אושרה!',
+            `בשורות טובות – הסיור שלך במרכז מבקרים פתיל תכלת אושר!
+
+  קבוצה:         {{groupName}}
+  תאריך:         {{tourDateFull}}
+  שעה:           {{startTime}} – {{endTime}}
+  משתתפים:       {{participantSummary}}{{programLine}}
+  סה"כ לתשלום:  ₪{{totalCost}}
+
+מצפים לקבל את פניך ב{{tourDateFull}}.
+
+צוות תכלת`
+        ),
+
+        en('reschedule',
+            'Tekhelet Visiting Center Tour – Updated Schedule',
+            `We wanted to let you know that your tour at the Tekhelet Visiting Center has been rescheduled.
+
+Updated details:
+  Group:    {{groupName}}
+  New Date: {{tourDateFull}}
+  New Time: {{startTime}} – {{endTime}}
+
+If you have any questions please don't hesitate to contact us.
+
+The Tekhelet Team`
+        ),
+
+        he('reschedule',
+            'סיור מרכז מבקרים פתיל תכלת – עדכון מועד הסיור',
+            `ברצוננו להודיעך כי מועד הסיור שלך במרכז מבקרים פתיל תכלת עודכן.
+
+פרטים מעודכנים:
+  קבוצה:      {{groupName}}
+  תאריך חדש:  {{tourDateFull}}
+  שעה חדשה:   {{startTime}} – {{endTime}}
+
+לכל שאלה, אנא פנה/י אלינו.
+
+צוות תכלת`
+        ),
+
+        en('cancellation',
+            'Tekhelet Visiting Center Tour – Cancellation Notice',
+            `This is to confirm that your tour booking at the Tekhelet Visiting Center has been cancelled.
+
+  Group: {{groupName}}
+  Date:  {{tourDateFull}}
+  Time:  {{startTime}}
+
+We hope to welcome you at a future date.
+
+The Tekhelet Team`
+        ),
+
+        he('cancellation',
+            'סיור מרכז מבקרים פתיל תכלת – ביטול ההזמנה',
+            `בזאת אנו מאשרים כי ההזמנה שלך לסיור במרכז מבקרים פתיל תכלת בוטלה.
+
+  קבוצה: {{groupName}}
+  תאריך: {{tourDateFull}}
+  שעה:   {{startTime}}
+
+מקווים לראותך בביקור עתידי.
+
+צוות תכלת`
+        ),
+    ];
 };
 
 module.exports = autoSeed;

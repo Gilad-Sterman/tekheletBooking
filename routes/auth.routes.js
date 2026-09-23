@@ -100,6 +100,30 @@ router.get('/google/callback', async (req, res) => {
     }
 });
 
+// ---------- Microsoft mail connection (delegated OAuth) ----------
+
+// Redirect to Microsoft for mail consent. ?userId= records who connected it.
+router.get('/microsoft', (req, res) => {
+    const mailService = require('../services/mail.service');
+    res.redirect(mailService.getAuthUrl(req.query.userId || ''));
+});
+
+router.get('/microsoft/callback', async (req, res) => {
+    const { code, state: userId, error, error_description } = req.query;
+    if (error) {
+        return res.status(400).send(`<h1>Microsoft auth denied</h1><p>${error_description || error}</p>`);
+    }
+    try {
+        const mailService = require('../services/mail.service');
+        const account = await mailService.connectFromCode(code, userId || null);
+        const base = process.env.FRONTEND_URL || '';
+        res.redirect(`${base}/settings?mailConnected=${encodeURIComponent(account.email)}`);
+    } catch (err) {
+        console.error('Error during Microsoft auth:', err);
+        res.status(500).send('Microsoft authentication failed.');
+    }
+});
+
 // Disconnect Google Calendar
 router.post('/disconnect', auth, async (req, res) => {
     try {

@@ -1,6 +1,7 @@
 const Tour = require('../models/tour.model');
 const User = require('../models/user.model');
 const calendarService = require('../services/calendar.service');
+const automationService = require('../services/automation.service');
 
 // Helper to check for overlapping tours
 const hasOverlap = async (tourData, excludeId = null) => {
@@ -81,6 +82,10 @@ exports.createTour = async (req, res) => {
         await calendarService.syncTourToGuides(tour);
 
         const newTour = await tour.save();
+        // Fire-and-forget: automation runs async, never blocks the response
+        automationService.onTourCreated(newTour).catch(e =>
+            console.error('[automation] onTourCreated error:', e.message)
+        );
         res.status(201).json(newTour);
     } catch (err) {
         console.error('Error creating tour:', err);
@@ -130,6 +135,10 @@ exports.updateTour = async (req, res) => {
 
         if (updatedTour) {
             await calendarService.syncTourToGuides(updatedTour, oldGuideIds);
+            // Fire-and-forget: automation runs async, never blocks the response
+            automationService.onTourUpdated(oldTour, updatedTour).catch(e =>
+                console.error('[automation] onTourUpdated error:', e.message)
+            );
         }
 
         res.json(updatedTour);

@@ -5,7 +5,7 @@ const groupSchema = new mongoose.Schema({
     type: { type: String, required: true }, // e.g., Individual/Family, Day School, etc.
     status: {
         type: String,
-        enum: ['Scheduled', 'Tentative', 'Confirmed', 'Cancelled', 'No Show'],
+        enum: ['Scheduled', 'Tentative', 'Awaiting Confirmation', 'Confirmed', 'Cancelled', 'No Show'],
         default: 'Scheduled'
     },
     counts: {
@@ -68,7 +68,9 @@ const groupSchema = new mongoose.Schema({
         socialMediaMention: { type: Boolean, default: false },
         ambassador: { type: Boolean, default: false },
         improvements: String
-    }
+    },
+    // Mail automation fields
+    mailFolderId: { type: String, default: '' }
 });
 
 const tourSchema = new mongoose.Schema({
@@ -103,7 +105,9 @@ const tourSchema = new mongoose.Schema({
         default: {}
     },
     endTimeOverride: { type: Boolean, default: false },
-    createdBy: { type: String, default: '' }
+    createdBy: { type: String, default: '' },
+    // Mail automation fields
+    mailFolderId: { type: String, default: '' }
 }, { timestamps: true });
 
 // Virtual for FullCalendar compatibility
