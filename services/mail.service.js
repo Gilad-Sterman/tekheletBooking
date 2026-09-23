@@ -55,6 +55,9 @@ const connectFromCode = async (code, connectedBy = null) => {
     });
 
     const email = profile.data.mail || profile.data.userPrincipalName;
+    // Deactivate any previously connected account before activating the new one
+    // so there is never more than one active mailbox at a time.
+    await MailAccount.updateMany({ provider: 'microsoft' }, { isActive: false });
     const account = await MailAccount.findOneAndUpdate(
         { provider: 'microsoft', email },
         {
