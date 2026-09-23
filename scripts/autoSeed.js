@@ -213,6 +213,26 @@ const getRequiredConfigurations = () => {
                 { id: 'staff', label: 'Staff Out', color: '#3b82f6', isActive: true }
             ],
             description: 'Available categories for info messages'
+        },
+
+        // Email Automation Timing Configuration (editable via the Settings page)
+        {
+            category: 'email_automation',
+            key: 'reminder_days_before',
+            value: 2,
+            description: 'Days before the tour to send the reminder email'
+        },
+        {
+            category: 'email_automation',
+            key: 'post_tour_days_after',
+            value: 0,
+            description: 'Days after the tour ends to send the thank-you email (0 = same day, once end time has passed)'
+        },
+        {
+            category: 'email_automation',
+            key: 'google_review_link',
+            value: '',
+            description: 'Google review URL included in the post-visit email (leave empty to omit the review request)'
         }
     ];
 };
@@ -369,7 +389,7 @@ The Tekhelet Team`
 
 מצפים לראותך!
 
-צוות תכלת`
+צוות פתיל תכלת`
         ),
 
         en('confirmed',
@@ -399,7 +419,7 @@ The Tekhelet Team`
 
 מצפים לקבל את פניך ב{{tourDateFull}}.
 
-צוות תכלת`
+צוות פתיל תכלת`
         ),
 
         en('reschedule',
@@ -427,7 +447,7 @@ The Tekhelet Team`
 
 לכל שאלה, אנא פנה/י אלינו.
 
-צוות תכלת`
+צוות פתיל תכלת`
         ),
 
         en('cancellation',
@@ -453,7 +473,61 @@ The Tekhelet Team`
 
 מקווים לראותך בביקור עתידי.
 
-צוות תכלת`
+צוות פתיל תכלת`
+        ),
+
+        en('reminder',
+            'Tekhelet Visiting Center Tour – Upcoming Tour Reminder',
+            `This is a friendly reminder about your upcoming tour at the Tekhelet Visiting Center.
+
+  Group:        {{groupName}}
+  Date:         {{tourDateFull}}
+  Time:         {{startTime}} – {{endTime}}
+  Participants: {{participantSummary}}{{programLine}}
+
+If you need to make any changes, please reply to this email.
+
+See you soon!
+
+The Tekhelet Team`
+        ),
+
+        he('reminder',
+            'סיור מרכז מבקרים פתיל תכלת – תזכורת לסיור הקרוב',
+            `תזכורת ידידותית לסיור הקרוב שלך במרכז מבקרים פתיל תכלת.
+
+  קבוצה:    {{groupName}}
+  תאריך:    {{tourDateFull}}
+  שעה:      {{startTime}} – {{endTime}}
+  משתתפים:  {{participantSummary}}{{programLine}}
+
+אם צריך לשנות משהו, אנא השב/י לאימייל זה.
+
+נתראה בקרוב!
+
+צוות פתיל תכלת`
+        ),
+
+        en('post_visit',
+            'Thank you for visiting the Tekhelet Visiting Center',
+            `Thank you for visiting us at the Tekhelet Visiting Center!
+
+We hope you enjoyed your tour and discovered something new about the ancient tekhelet dye.{{reviewLine}}
+
+We look forward to welcoming you again.
+
+The Tekhelet Team`
+        ),
+
+        he('post_visit',
+            'תודה שביקרתם במרכז מבקרים פתיל תכלת',
+            `תודה שביקרתם במרכז מבקרים פתיל תכלת!
+
+מקווים שנהניתם מהסיור ולמדתם משהו חדש על תעשיית התכלת העתיקה.{{reviewLine}}
+
+נשמח לארח אתכם שוב.
+
+צוות פתיל תכלת`
         ),
     ];
 };

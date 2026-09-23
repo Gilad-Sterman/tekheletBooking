@@ -49,7 +49,7 @@ const participantSummaryHe = (counts = {}) => {
         + (counts.group || 0) + (counts.child || 0);
     const parts = [];
     if (counts.regular)        parts.push(`${counts.regular} רגיל`);
-    if (counts.seniorSoldier)  parts.push(`${counts.seniorSoldier} בכיר/חייל`);
+    if (counts.seniorSoldier)  parts.push(`${counts.seniorSoldier} אזרח ותיק/חייל`);
     if (counts.group)          parts.push(`${counts.group} קבוצה`);
     if (counts.child)          parts.push(`${counts.child} ילד`);
     return total ? `${total} סה"כ (${parts.join(', ')})` : '—';
@@ -58,8 +58,10 @@ const participantSummaryHe = (counts = {}) => {
 /**
  * Build the merge-variable map for a group email.
  * groupTag: the full tag string like '[TB-a1b2-01]'
+ * ctx.reviewLink: Google review URL — used by the post_visit template via {{reviewLine}}.
+ *                 Empty when no link is configured so the placeholder renders nothing.
  */
-const buildVars = (tour, group, groupTag) => {
+const buildVars = (tour, group, groupTag, ctx = {}) => {
     const isHe = (tour.language || '').toLowerCase().startsWith('heb');
     const counts = group.counts || {};
 
@@ -79,6 +81,13 @@ const buildVars = (tour, group, groupTag) => {
         ? `\n  ${isHe ? 'מחיר משוער:  ₪' : 'Est. Total:  ₪'}${cost}`
         : '';
 
+    // reviewLine: whole localized paragraph + link, or empty string when no link is set.
+    const reviewLine = ctx.reviewLink
+        ? (isHe
+            ? `\n\nאם יש לך רגע, נשמח מאוד לביקורת בגוגל – זה עוזר לאחרים למצוא אותנו:\n${ctx.reviewLink}`
+            : `\n\nIf you have a moment, we would really appreciate a Google review — it helps others find us:\n${ctx.reviewLink}`)
+        : '';
+
     return {
         leaderName: group.contact?.leaderName || group.contact?.externalGuideName || '',
         groupName: group.name || '',
@@ -88,7 +97,8 @@ const buildVars = (tour, group, groupTag) => {
         participantSummary: isHe ? participantSummaryHe(counts) : participantSummaryEn(counts),
         totalCost: cost,
         programLine,
-        costLine
+        costLine,
+        reviewLine
     };
 };
 

@@ -14,6 +14,7 @@
 const mailService = require('./mail.service');
 const EmailLog = require('../models/emailLog.model');
 const EmailTemplate = require('../models/emailTemplate.model');
+const AppConfig = require('../models/appConfig.model');
 const Tour = require('../models/tour.model');
 const { buildVars, renderTemplate } = require('./mailTemplates');
 
@@ -96,7 +97,7 @@ const ensureGroupFolders = async (account, tour, group, groupIdx) => {
  * opts.inquiryConvId: if set and mode=auto, reply on this thread instead of sending fresh
  */
 const sendGroupEmail = async (account, templateKey, tour, group, groupIdx, opts = {}) => {
-    const { groupTag, groupFolderId, inquiryConvId } = opts;
+    const { groupTag, groupFolderId, inquiryConvId, reviewLink } = opts;
 
     const lang = (tour.language || '').toLowerCase().startsWith('heb') ? 'he' : 'en';
     const template = await EmailTemplate.findOne({ key: templateKey, language: lang });
@@ -108,7 +109,7 @@ const sendGroupEmail = async (account, templateKey, tour, group, groupIdx, opts 
         return;
     }
 
-    const vars = buildVars(tour, group, groupTag);
+    const vars = buildVars(tour, group, groupTag, { reviewLink });
     const subject = renderTemplate(template.subject, vars);
     const body = renderTemplate(template.body, vars);
 
@@ -368,4 +369,123 @@ const sweepSentDrafts = async () => {
     return { swept, total: draftLogs.length };
 };
 
-module.exports = { onTourCreated, onTourUpdated, sweepSentDrafts };
+// ─── Scheduled emails (Phase C) ──────────────────────────────────────────────
+
+const SITE_TZ = process.env.SITE_TZ || 'Asia/Jerusalem';
+
+// Current date/time in the site timezone as 'YYYY-MM-DD' + 'HH:MM' strings.
+// Tour dates/times are stored as local wall-clock strings, so all comparisons
+// are done in site-local terms — safe regardless of the server's own timezone.
+const siteNow = () => {
+    const parts = Object.fromEntries(
+        new Intl.DateTimeFormat('en-CA', {
+            timeZone: SITE_TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit', hour12: false
+        }).formatToParts(new Date()).map(p => [p.type, p.value])
+    );
+    return { date: `${parts.year}-${parts.month}-${parts.day}`, time: `${parts.hour}:${parts.minute}` };
+};
+
+// Shift a 'YYYY-MM-DD' string by N days (UTC math is safe at day precision).
+const shiftDays = (dateStr, days) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+};
+
+const getAutomationConfig = async () => {
+    const docs = await AppConfig.find({ category: 'email_automation', isActive: true }).lean();
+    const map = Object.fromEntries(docs.map(d => [d.key, d.value]));
+    return {
+        reminderDaysBefore: Number(map.reminder_days_before ?? 2),
+        postTourDaysAfter: Number(map.post_tour_days_after ?? 0),
+        reviewLink: map.google_review_link || ''
+    };
+};
+
+// True if this group already has a log for this template (any non-failed state).
+const alreadySent = (tourId, groupId, templateKey) =>
+    EmailLog.exists({ tourId, groupId, templateKey, status: { $in: ['queued', 'draft', 'sent'] } });
+
+// Only groups that were actually booked in — not awaiting confirmation, cancelled, or no-show.
+const isBookedGroup = (g) => ['Scheduled', 'Confirmed'].includes(g.status);
+
+// Start of the current site-local day as a UTC timestamp. Site days are what
+// matter — an email sent yesterday shouldn't block today's reminder, but a
+// confirmation sent this morning should.
+const siteDayStartMs = () => {
+    const tzName = new Intl.DateTimeFormat('en-US', { timeZone: SITE_TZ, timeZoneName: 'longOffset' })
+        .formatToParts(new Date()).find(p => p.type === 'timeZoneName')?.value || 'GMT+00:00';
+    const m = tzName.match(/GMT([+-])(\d{2}):(\d{2})/);
+    const offsetMin = m ? (Number(m[2]) * 60 + Number(m[3])) * (m[1] === '-' ? -1 : 1) : 0;
+    return Date.parse(`${siteNow().date}T00:00:00Z`) - offsetMin * 60000;
+};
+
+// True if this group got ANY automated email today (site-local day) — prevents
+// back-to-back emails (e.g. confirmation + same-day reminder, or reschedule +
+// thank-you when a group is moved to a tour in the past).
+const emailedToday = (tourId, groupId) =>
+    EmailLog.exists({ tourId, groupId, createdAt: { $gte: new Date(siteDayStartMs()) } });
+
+/**
+ * Hourly job: pre-tour reminders + post-tour thank-you emails.
+ *
+ * Reminder: fires once per group for tours landing within [today, today+N days].
+ * Post-visit: fires once per group once the tour's end time + N days has passed.
+ * Both dedupe via EmailLog so an hourly cron never double-sends.
+ */
+const runScheduledEmails = async () => {
+    const account = await mailService.getActiveAccount();
+    if (!account) return { reminders: 0, postVisit: 0 };
+
+    const cfg = await getAutomationConfig();
+    const now = siteNow();
+    let reminders = 0, postVisit = 0;
+
+    // ── Pre-tour reminders ──
+    const reminderEnd = shiftDays(now.date, cfg.reminderDaysBefore);
+    const upcoming = await Tour.find({ date: { $gte: now.date, $lte: reminderEnd } }).lean();
+
+    for (const tour of upcoming) {
+        for (let i = 0; i < (tour.groups || []).length; i++) {
+            const group = tour.groups[i];
+            if (!isBookedGroup(group)) continue;
+            if (await alreadySent(tour._id, group._id, 'reminder')) continue;
+            // Skip groups emailed today (e.g. booked this morning — the
+            // confirmation already went out, a same-day reminder is redundant).
+            if (await emailedToday(tour._id, group._id)) continue;
+            const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, i);
+            await sendGroupEmail(account, 'reminder', tour, group, i, { groupTag, groupFolderId });
+            reminders++;
+        }
+    }
+
+    // ── Post-tour thank-you ──
+    // tourEnd <= cutoff means the tour ended at least postTourDaysAfter ago.
+    // The floor prevents mass retroactive emails for old tours on first deploy.
+    const cutoffStr = `${shiftDays(now.date, -cfg.postTourDaysAfter)}T${now.time}`;
+    const floorDate = shiftDays(now.date, -cfg.postTourDaysAfter - 3);
+    const ended = await Tour.find({ date: { $gte: floorDate, $lte: now.date } }).lean();
+
+    for (const tour of ended) {
+        const tourEnd = `${tour.date}T${tour.endTime || '23:59'}`;
+        if (tourEnd > cutoffStr) continue;
+        for (let i = 0; i < (tour.groups || []).length; i++) {
+            const group = tour.groups[i];
+            if (!isBookedGroup(group)) continue;
+            if (await alreadySent(tour._id, group._id, 'post_visit')) continue;
+            if (await emailedToday(tour._id, group._id)) continue;
+            const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, i);
+            await sendGroupEmail(account, 'post_visit', tour, group, i, {
+                groupTag, groupFolderId, reviewLink: cfg.reviewLink
+            });
+            postVisit++;
+        }
+    }
+
+    if (reminders || postVisit) {
+        console.log(`[automation] Scheduled emails: ${reminders} reminder(s), ${postVisit} post-visit`);
+    }
+    return { reminders, postVisit };
+};
+
+module.exports = { onTourCreated, onTourUpdated, sweepSentDrafts, runScheduledEmails };

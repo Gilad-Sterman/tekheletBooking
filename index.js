@@ -65,11 +65,17 @@ app.listen(PORT, () => {
 
     // Phase C: sweep sent drafts into their group folders every 30 minutes.
     // Runs entirely within this process — no separate worker needed.
-    const { sweepSentDrafts } = require('./services/automation.service');
+    const { sweepSentDrafts, runScheduledEmails } = require('./services/automation.service');
     cron.schedule('*/30 * * * *', () => {
         sweepSentDrafts().catch(e => console.error('[sweep] Cron error:', e.message));
     });
     console.log('[sweep] Filed-drafts sweep scheduled (every 30 min)');
+
+    // Phase C: pre-tour reminders + post-tour thank-yous, hourly at :05.
+    cron.schedule('5 * * * *', () => {
+        runScheduledEmails().catch(e => console.error('[automation] Scheduled emails error:', e.message));
+    });
+    console.log('[automation] Scheduled emails job running (hourly at :05)');
 });
 
 module.exports = app;
