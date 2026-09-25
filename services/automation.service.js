@@ -333,9 +333,16 @@ const sweepSentDrafts = async () => {
     for (const log of draftLogs) {
         try {
             // Resolve the group's mail folder from the tour document.
-            const tour = await Tour.findById(log.tourId, 'groups').lean();
+            const tour = await Tour.findById(log.tourId).lean();
             const group = tour?.groups?.find(g => g._id.toString() === log.groupId?.toString());
-            const folderId = group?.mailFolderId;
+            let folderId = group?.mailFolderId;
+            if (!folderId && tour && group) {
+                // Folder id was wiped or never set — reconnect via the
+                // deterministic folder name (find-or-create) instead of
+                // skipping this draft forever.
+                const groupIdx = tour.groups.findIndex(g => g._id.toString() === group._id.toString());
+                folderId = (await ensureGroupFolders(account, tour, group, groupIdx)).groupFolderId;
+            }
             if (!folderId) {
                 console.warn(`[sweep] No mailFolderId for group ${log.groupId} — skipping`);
                 continue;
@@ -444,8 +451,14 @@ const runScheduledEmails = async () => {
     // ── Pre-tour reminders ──
     const reminderEnd = shiftDays(now.date, cfg.reminderDaysBefore);
     const upcoming = await Tour.find({ date: { $gte: now.date, $lte: reminderEnd } }).lean();
+    const nowStr = `${now.date}T${now.time}`;
 
     for (const tour of upcoming) {
+        // Skip tours that already started — an "upcoming tour" reminder for a
+        // group mid-tour is pointless (can happen on same-day bookings or the
+        // first-run catch-up after mailbox connection).
+        if (`${tour.date}T${tour.startTime || '00:00'}` <= nowStr) continue;
+
         for (let i = 0; i < (tour.groups || []).length; i++) {
             const group = tour.groups[i];
             if (!isBookedGroup(group)) continue;

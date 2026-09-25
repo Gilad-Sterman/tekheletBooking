@@ -30,13 +30,14 @@ router.post('/test', auth, isCoordinator, async (req, res) => {
     const account = await mailService.getActiveAccount();
     if (!account) return res.status(400).json({ error: 'No mailbox connected' });
 
+    let log;
     try {
         const tag = '[TB-TEST-01]';
         const folderId = await mailService.ensureFolderPath(account, [
             'Tours', 'Connectivity Test [TB-TEST]', 'Test Group [TB-TEST-01]'
         ]);
 
-        const log = await EmailLog.create({
+        log = await EmailLog.create({
             templateKey: 'connectivity_test',
             to: account.email,
             subject: `Tekhelet connectivity test ${tag}`,
@@ -80,6 +81,11 @@ router.post('/test', auth, isCoordinator, async (req, res) => {
 
         res.json({ ok: true, folderId, messageId, conversationId, status: log.status });
     } catch (err) {
+        if (log) {
+            log.status = 'failed';
+            log.error = err.message;
+            await log.save().catch(() => {});
+        }
         console.error('Mail test failed:', err);
         res.status(500).json({ error: err.message });
     }

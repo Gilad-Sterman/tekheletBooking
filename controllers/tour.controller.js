@@ -127,6 +127,19 @@ exports.updateTour = async (req, res) => {
             data.assignedGuides = data.assignedGuides.filter(id => id !== '');
         }
 
+        // mailFolderId is automation-owned — re-inject the stored values so a
+        // client holding a stale copy can't wipe folder links on save.
+        data.mailFolderId = oldTour.mailFolderId || '';
+        if (Array.isArray(data.groups)) {
+            const oldFolderById = new Map(
+                oldTour.groups.map(g => [g._id.toString(), g.mailFolderId || ''])
+            );
+            data.groups = data.groups.map(g => ({
+                ...g,
+                mailFolderId: (g._id && oldFolderById.get(g._id.toString())) || ''
+            }));
+        }
+
         const updatedTour = await Tour.findByIdAndUpdate(
             req.params.id,
             data,
