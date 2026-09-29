@@ -82,6 +82,7 @@ const tourSchema = new mongoose.Schema({
 
     language: { type: String, required: true, default: 'English' },
     primaryGuide: { type: mongoose.Schema.Types.ObjectId, ref: 'Guide' },
+    customGuideName: { type: String, default: '' }, // free-text guide when "Other" is picked
     assignedGuides: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Guide' }],
 
     isWorkshop: { type: Boolean, default: false },
