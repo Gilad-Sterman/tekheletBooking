@@ -42,7 +42,8 @@ const groupSchema = new mongoose.Schema({
         totalCost: { type: Number, default: 0 },
         priceReason: String,
         paymentLinkSent: { type: Boolean, default: false },
-        prepaid: { type: Boolean, default: false },
+        prepaid: { type: Boolean, default: false }, // legacy — superseded by paymentStatus
+        paymentStatus: { type: String, default: 'Unpaid' }, // 'Unpaid' | 'Prepaid' | 'Paid Onsite'
         notes: String,
         history: [String]
     },

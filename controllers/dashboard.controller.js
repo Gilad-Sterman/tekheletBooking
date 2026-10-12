@@ -338,7 +338,9 @@ async function getFinancialStatistics(matchCriteria, groupMatchCriteria) {
         ...(Object.keys(groupMatchCriteria).length > 0 ? [{ $match: groupMatchCriteria }] : []),
         {
             $group: {
-                _id: '$groups.postVisit.paymentStatus',
+                // Legacy docs predate booking.paymentStatus — fall back to the
+                // old prepaid boolean so they still chart correctly.
+                _id: { $ifNull: ['$groups.booking.paymentStatus', { $cond: ['$groups.booking.prepaid', 'Prepaid', 'Unpaid'] }] },
                 value: { $sum: 1 }
             }
         }

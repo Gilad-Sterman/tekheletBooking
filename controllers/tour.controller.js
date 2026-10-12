@@ -161,6 +161,109 @@ exports.updateTour = async (req, res) => {
     }
 };
 
+// Move a group to another tour (or a new tour) — add-then-remove.
+// The group is appended to the destination BEFORE removal from the source,
+// so a mid-flight failure can only duplicate it, never lose it.
+// The group is read from the DB — client payloads are never trusted.
+exports.moveGroup = async (req, res) => {
+    try {
+        const { id: sourceId, groupId } = req.params;
+        const { destinationId, date, startTime, endTime } = req.body;
+
+        if (destinationId !== 'new' && String(destinationId) === String(sourceId)) {
+            return res.status(400).json({ message: 'Cannot move a group to the same tour' });
+        }
+
+        const source = await Tour.findById(sourceId);
+        if (!source) return res.status(404).json({ message: 'Source tour not found' });
+        const group = source.groups.id(groupId);
+        if (!group) return res.status(404).json({ message: 'Group not found in source tour' });
+
+        const groupData = group.toObject();
+        groupData.mailFolderId = ''; // fresh folder under the destination tour
+        const sourceGuideIds = source.assignedGuides.map(g => g.toString());
+
+        // 1) Add to destination (or create it) — nothing is lost if this fails
+        let destination, destBefore = null, destCreated = false;
+        if (destinationId === 'new') {
+            destination = await Tour.create({
+                title: group.name || source.title,
+                date: date || source.date,
+                startTime: startTime || source.startTime,
+                endTime: endTime || source.endTime,
+                language: source.language,
+                color: source.color,
+                primaryGuide: source.primaryGuide || null,
+                customGuideName: source.customGuideName || '',
+                isWorkshop: source.isWorkshop,
+                isShiur: source.isShiur,
+                groups: [groupData]
+            });
+            destCreated = true;
+        } else {
+            destination = await Tour.findById(destinationId);
+            if (!destination) return res.status(404).json({ message: 'Destination tour not found' });
+            destBefore = destination.toObject();
+            // Idempotent: if the group is already there (retry after a partial move), don't push it twice
+            if (!destination.groups.id(groupId)) {
+                destination.groups.push(groupData);
+                await destination.save();
+            }
+        }
+
+        // 2) Remove from source — worst case now is a duplicate, never a loss
+        let duplicated = false, sourceDeleted = false, updatedSource = null;
+        try {
+            updatedSource = await Tour.findByIdAndUpdate(
+                sourceId,
+                { $pull: { groups: { _id: group._id } } },
+                { returnDocument: 'after' }
+            );
+            if (updatedSource.groups.length === 0) {
+                // Sync removals BEFORE deleting — same as deleteTour, so guide GCal events get cleaned up
+                try {
+                    source.assignedGuides = [];
+                    await calendarService.syncTourToGuides(source, sourceGuideIds);
+                } catch (syncErr) {
+                    console.error('[move-group] source-delete calendar sync failed:', syncErr.message);
+                }
+                await Tour.findByIdAndDelete(sourceId);
+                sourceDeleted = true;
+            }
+        } catch (removeErr) {
+            console.error(`[move-group] Added to destination but could not remove from source ${sourceId}:`, removeErr.message);
+            duplicated = true;
+        }
+
+        // 3) Calendar sync + automation hooks — same semantics as the old flow
+        try {
+            await calendarService.syncTourToGuides(destination);
+            if (destCreated) {
+                automationService.onTourCreated(destination).catch(e =>
+                    console.error('[automation] onTourCreated error:', e.message)
+                );
+            } else {
+                automationService.onTourUpdated(destBefore, destination).catch(e =>
+                    console.error('[automation] onTourUpdated error:', e.message)
+                );
+            }
+            if (!sourceDeleted && updatedSource) {
+                await calendarService.syncTourToGuides(updatedSource, sourceGuideIds);
+                automationService.onTourUpdated(source, updatedSource).catch(e =>
+                    console.error('[automation] onTourUpdated error:', e.message)
+                );
+            }
+        } catch (postErr) {
+            console.error('[move-group] post-move sync/automation error:', postErr.message);
+        }
+
+        res.json({ moved: true, duplicated, sourceDeleted, destinationId: destination._id });
+    } catch (err) {
+        console.error('Error moving group:', err);
+        res.status(500).json({ message: err.message });
+    }
+};
+
 // Delete a tour
 exports.deleteTour = async (req, res) => {
     try {
