@@ -16,6 +16,7 @@ const emailLogSchema = new mongoose.Schema({
     },
     messageId: String,       // provider message id
     conversationId: String,  // provider conversation/thread id — used for filing + reply chaining
+    trigger: String,         // dedupe fingerprint — e.g. reschedule stores "date T start-end" so a second notice only fires if the schedule actually changed again
     error: String,
     sentAt: Date
 }, { timestamps: true });

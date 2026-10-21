@@ -97,7 +97,7 @@ const ensureGroupFolders = async (account, tour, group, groupIdx) => {
  * opts.inquiryConvId: if set and mode=auto, reply on this thread instead of sending fresh
  */
 const sendGroupEmail = async (account, templateKey, tour, group, groupIdx, opts = {}) => {
-    const { groupTag, groupFolderId, inquiryConvId, reviewLink } = opts;
+    const { groupTag, groupFolderId, inquiryConvId, reviewLink, trigger } = opts;
 
     const lang = (tour.language || '').toLowerCase().startsWith('heb') ? 'he' : 'en';
     const template = await EmailTemplate.findOne({ key: templateKey, language: lang });
@@ -130,7 +130,8 @@ const sendGroupEmail = async (account, templateKey, tour, group, groupIdx, opts 
         to,
         subject,
         mode: template.mode,
-        status: 'queued'
+        status: 'queued',
+        trigger
     });
 
     try {
@@ -191,9 +192,14 @@ const handleNewGroup = async (account, tour, group, groupIdx) => {
             tourId: { $ne: tour._id }
         }).lean();
         if (priorLog) {
+            const trigger = `${tour.date}T${tour.startTime || ''}-${tour.endTime || ''}`;
+            if (await rescheduleAlreadyLogged(group._id, trigger)) {
+                console.log(`[automation] Reschedule for group ${group._id} already logged for ${trigger} — skipping`);
+                return;
+            }
             console.log(`[automation] Group ${group._id} was moved from another tour — sending reschedule`);
             const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, groupIdx);
-            await sendGroupEmail(account, 'reschedule', tour, group, groupIdx, { groupTag, groupFolderId });
+            await sendGroupEmail(account, 'reschedule', tour, group, groupIdx, { groupTag, groupFolderId, trigger });
             return;
         }
     }
@@ -220,7 +226,7 @@ const handleNewGroup = async (account, tour, group, groupIdx) => {
     const key = group.status === 'Confirmed' ? 'confirmed'
         : group.status === 'Awaiting Confirmation' ? 'awaiting_confirmation'
         : null;
-    if (key) {
+    if (key && !(await alreadySent(tour._id, group._id, key))) {
         await sendGroupEmail(account, key, tour, group, groupIdx, { groupTag, groupFolderId, inquiryConvId });
     }
 };
@@ -229,22 +235,31 @@ const handleNewGroup = async (account, tour, group, groupIdx) => {
  * Called when an existing group's status changes.
  */
 const handleStatusChange = async (account, tour, group, groupIdx) => {
-    const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, groupIdx);
     const key = group.status === 'Confirmed' ? 'confirmed'
         : group.status === 'Awaiting Confirmation' ? 'awaiting_confirmation'
         : group.status === 'Cancelled' ? 'cancellation'
         : null;
-    if (key) {
-        await sendGroupEmail(account, key, tour, group, groupIdx, { groupTag, groupFolderId });
+    if (!key) return;
+    // Once per group per template — flip-flopping a status shouldn't spam the client.
+    if (await alreadySent(tour._id, group._id, key)) {
+        console.log(`[automation] ${key} already logged for group ${group._id} — skipping`);
+        return;
     }
+    const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, groupIdx);
+    await sendGroupEmail(account, key, tour, group, groupIdx, { groupTag, groupFolderId });
 };
 
 /**
  * Called when a tour's date or start time changes for a specific active group.
  */
 const handleReschedule = async (account, tour, group, groupIdx) => {
+    const trigger = `${tour.date}T${tour.startTime || ''}-${tour.endTime || ''}`;
+    if (await rescheduleAlreadyLogged(group._id, trigger)) {
+        console.log(`[automation] Reschedule for group ${group._id} already logged for ${trigger} — skipping`);
+        return;
+    }
     const { groupFolderId, groupTag } = await ensureGroupFolders(account, tour, group, groupIdx);
-    await sendGroupEmail(account, 'reschedule', tour, group, groupIdx, { groupTag, groupFolderId });
+    await sendGroupEmail(account, 'reschedule', tour, group, groupIdx, { groupTag, groupFolderId, trigger });
 };
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -412,6 +427,11 @@ const getAutomationConfig = async () => {
 // True if this group already has a log for this template (any non-failed state).
 const alreadySent = (tourId, groupId, templateKey) =>
     EmailLog.exists({ tourId, groupId, templateKey, status: { $in: ['queued', 'draft', 'sent'] } });
+
+// Reschedule dedupe is fingerprinted on the new schedule: identical re-saves and
+// move retries collapse, but a genuinely different date/time still fires.
+const rescheduleAlreadyLogged = (groupId, trigger) =>
+    EmailLog.exists({ groupId, templateKey: 'reschedule', trigger, status: { $in: ['queued', 'draft', 'sent'] } });
 
 // Only groups that were actually booked in — not awaiting confirmation, cancelled, or no-show.
 const isBookedGroup = (g) => ['Scheduled', 'Confirmed'].includes(g.status);

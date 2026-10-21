@@ -1,5 +1,6 @@
 const Tour = require('../models/tour.model');
 const User = require('../models/user.model');
+const EmailLog = require('../models/emailLog.model');
 const calendarService = require('../services/calendar.service');
 const automationService = require('../services/automation.service');
 
@@ -238,15 +239,23 @@ exports.moveGroup = async (req, res) => {
         // 3) Calendar sync + automation hooks — same semantics as the old flow
         try {
             await calendarService.syncTourToGuides(destination);
+            // Await the destination hook: move-detection needs the group's email
+            // history still keyed under the source tourId. Migrate it afterwards.
             if (destCreated) {
-                automationService.onTourCreated(destination).catch(e =>
+                await automationService.onTourCreated(destination).catch(e =>
                     console.error('[automation] onTourCreated error:', e.message)
                 );
             } else {
-                automationService.onTourUpdated(destBefore, destination).catch(e =>
+                await automationService.onTourUpdated(destBefore, destination).catch(e =>
                     console.error('[automation] onTourUpdated error:', e.message)
                 );
             }
+            // Attach the group's email history to the destination tour so dedupe
+            // (alreadySent / emailedToday) keeps working across the move.
+            await EmailLog.updateMany(
+                { groupId: group._id, tourId: source._id },
+                { $set: { tourId: destination._id } }
+            );
             if (!sourceDeleted && updatedSource) {
                 await calendarService.syncTourToGuides(updatedSource, sourceGuideIds);
                 automationService.onTourUpdated(source, updatedSource).catch(e =>
