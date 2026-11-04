@@ -122,8 +122,8 @@ const getRequiredConfigurations = () => {
             category: 'pricing',
             key: 'base_prices',
             value: {
-                regular: 40,
-                seniorSoldier: 30,
+                regular: 50,
+                seniorSoldier: 40,
                 child: 0,
                 workshop: 200,
                 currency: '₪'
@@ -142,8 +142,8 @@ const getRequiredConfigurations = () => {
                     description: '10% discount for groups of 20+ people'
                 },
                 workshopCalculation: {
-                    formula: 'Math.floor(totalParticipants / 5 + 1) * workshopPrice',
-                    description: 'Workshop sessions based on group size (1 session per 5 people)'
+                    formula: 'Math.max(1, Math.ceil((totalParticipants - 1) / 5)) * workshopPrice',
+                    description: 'Workshop sessions: 1 per 5 people, a single extra person never adds a session (min 1)'
                 }
             },
             description: 'Discount rules and calculation formulas'

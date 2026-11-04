@@ -59,7 +59,6 @@ const groupSchema = new mongoose.Schema({
         otherItems: [String]
     },
     postVisit: {
-        paymentStatus: { type: String, default: 'Pending' },
         donation: {
             done: { type: Boolean, default: false },
             amount: { type: Number, default: 0 }
